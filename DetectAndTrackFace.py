@@ -19,7 +19,6 @@ To stop script execution press "q" on keyboard.
 @author: alan shmyha
 """
 
-# imports
 import argparse
 import cv2
 import numpy as np
@@ -48,27 +47,27 @@ parser.add_argument("--face_recognition_model", "-fr", type=str,
 args = parser.parse_args()
 
 
-def visualize(input, faces, thickness=2):
+def visualize(target_img, detected_faces, thickness=2):
     """
     Visualization function.
 
     Draws surrounding boxes and facial landmarks.
     """
-    if faces[1] is None:
+    if detected_faces[1] is None:
         return
-    for idx, face in enumerate(faces[1]):
+    for idx, face in enumerate(detected_faces[1]):
         print(DETECTED_IMG_LOG_MSG.format(idx, face[0], face[1], face[2], face[3], face[-1]))
         coords = face[:-1].astype(np.int32)
-        cv2.rectangle(input, (coords[0], coords[1]), (coords[0] + coords[2], coords[1] + coords[3]), (0, 255, 0),
+        cv2.rectangle(target_img, (coords[0], coords[1]), (coords[0] + coords[2], coords[1] + coords[3]), (0, 255, 0),
                       thickness)
-        cv2.circle(input, (coords[4], coords[5]), 2, (255, 0, 0), thickness)
-        cv2.circle(input, (coords[6], coords[7]), 2, (0, 0, 255), thickness)
-        cv2.circle(input, (coords[8], coords[9]), 2, (0, 255, 0), thickness)
-        cv2.circle(input, (coords[10], coords[11]), 2, (255, 0, 255), thickness)
-        cv2.circle(input, (coords[12], coords[13]), 2, (0, 255, 255), thickness)
+        cv2.circle(target_img, (coords[4], coords[5]), 2, (255, 0, 0), thickness)
+        cv2.circle(target_img, (coords[6], coords[7]), 2, (0, 0, 255), thickness)
+        cv2.circle(target_img, (coords[8], coords[9]), 2, (0, 255, 0), thickness)
+        cv2.circle(target_img, (coords[10], coords[11]), 2, (255, 0, 255), thickness)
+        cv2.circle(target_img, (coords[12], coords[13]), 2, (0, 255, 255), thickness)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Define source image for face recognition
     source_image = cv2.imread(args.image1)
     source_image = cv2.cvtColor(source_image, cv2.COLOR_BGR2RGB)
@@ -108,7 +107,7 @@ if __name__ == '__main__':
     frame_count = 0
     frame_threshold = 5
 
-    while (cap.isOpened()):
+    while cap.isOpened():
 
         # Capture the video frame by frame
         ret, frame = cap.read()
@@ -146,10 +145,10 @@ if __name__ == '__main__':
         visualize(frame, faces)
 
         # Visualize results
-        cv2.imshow('Live', frame)
+        cv2.imshow("Live", frame)
 
         # The 'q' button is set as the quitting button
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
     # After the loop release the cap object and destroy all the windows
