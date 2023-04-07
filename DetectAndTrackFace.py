@@ -20,6 +20,7 @@ To stop script execution press "q" on keyboard.
 """
 
 import argparse
+import sys
 import cv2
 import numpy as np
 
@@ -47,24 +48,33 @@ parser.add_argument("--face_recognition_model", "-fr", type=str,
 args = parser.parse_args()
 
 
-def visualize(target_img, detected_faces, thickness=2):
+def detect_and_recognize(img, src_feat):
+    """Performs face detection and recognition on the target image.
     """
-    Visualization function.
-
-    Draws surrounding boxes and facial landmarks.
-    """
-    if detected_faces[1] is None:
+    # Detect faces on the current frame if any are present
+    face_candidates = detector.detect(img)
+    if face_candidates[1] is None:
         return
-    for idx, face in enumerate(detected_faces[1]):
-        print(DETECTED_IMG_LOG_MSG.format(idx, face[0], face[1], face[2], face[3], face[-1]))
-        coords = face[:-1].astype(np.int32)
-        cv2.rectangle(target_img, (coords[0], coords[1]), (coords[0] + coords[2], coords[1] + coords[3]), (0, 255, 0),
-                      thickness)
-        cv2.circle(target_img, (coords[4], coords[5]), 2, (255, 0, 0), thickness)
-        cv2.circle(target_img, (coords[6], coords[7]), 2, (0, 0, 255), thickness)
-        cv2.circle(target_img, (coords[8], coords[9]), 2, (0, 255, 0), thickness)
-        cv2.circle(target_img, (coords[10], coords[11]), 2, (255, 0, 255), thickness)
-        cv2.circle(target_img, (coords[12], coords[13]), 2, (0, 255, 255), thickness)
+
+    # Align faces on the frame
+    aligned_faces = [recognizer.alignCrop(img, face) for face in face_candidates[1]]
+
+    # Extract features
+    dst_feats = [recognizer.feature(face) for face in aligned_faces]
+
+    # Define scores array to collect all the recognition scores
+    scores = []
+    # Go through all the faces and find the one we're seeking for
+    for dst_feat in dst_feats:
+        # Get the face recognition score and save it to the scores array under the corresponding index
+        recognition_score = recognizer.match(src_feat, dst_feat, cv2.FaceRecognizerSF_FR_COSINE)
+        scores.append(recognition_score)
+
+    # Pick top scored recognized faces and mark them by the red rectangle in the frame
+    match = face_candidates[1][np.argmax(scores)]
+    x, y, w, h = [int(val) for val in match][:4]
+    cv2.rectangle(frame, (x, y), (x + w, y + h), color=(0, 0, 255), thickness=5)
+    return x, y, w, h
 
 
 if __name__ == "__main__":
@@ -72,11 +82,14 @@ if __name__ == "__main__":
     source_image = cv2.imread(args.image1)
     source_image = cv2.cvtColor(source_image, cv2.COLOR_BGR2RGB)
 
-    # Create the detector
+    # Create detector
     detector = cv2.FaceDetectorYN.create(args.face_detection_model, "", (320, 320))
 
-    # Create the recognizer
+    # Create recognizer
     recognizer = cv2.FaceRecognizerSF.create(args.face_recognition_model, "")
+
+    # Create tracker
+    tracker = cv2.TrackerMIL_create()
 
     # Define a video capture object
     cap = cv2.VideoCapture(0)
@@ -107,45 +120,45 @@ if __name__ == "__main__":
     frame_count = 0
     frame_threshold = 5
 
+    # Get through first frames to try to find the face (it might not be present on the fist image)
+    for _ in range(5):
+        ret, frame = cap.read()
+        if not ret:
+            sys.exit("Cannot read first frames")
+
+        bbox = detect_and_recognize(frame, feat_src)
+        if bbox:
+            break
+
+    if not bbox:
+        sys.exit("No faces found on the initial frames")
+
+    frame = cv2.resize(frame, (frameWidth, frameHeight))
+
+    tracker.init(frame, bbox)
+
     while cap.isOpened():
 
         # Capture the video frame by frame
         ret, frame = cap.read()
         frame = cv2.resize(frame, (frameWidth, frameHeight))
 
-        # Detect faces on the current frame if any are present
-        faces = detector.detect(frame)
+        # Wait for Face to get back if is temporarily out of the frame
+        while cap.isOpened() and not bbox:
+            ret, frame = cap.read()
 
-        # If this frame is the one where we should run the recognizer then let's do it
-        if frame_count == frame_threshold:
-            # Align faces on the frame
-            aligned_faces = [recognizer.alignCrop(frame, face) for face in faces[1]]
+            # Get the target Face coordinates if exists
+            bbox = detect_and_recognize(frame, feat_src)
 
-            # Extract features
-            feats_dst = [recognizer.feature(face) for face in aligned_faces]
+        ok, bbox = tracker.update(frame)
+        x, y, w, h = bbox
 
-            # Define scores array to collect all the recognition scores
-            scores = []
-            # Go through all the faces and find the one we're seeking for
-            for feat_dst in feats_dst:
-                # Get the face recognition score and save it to the scores array under the corresponding index
-                recognition_score = recognizer.match(feat_src, feat_dst, cv2.FaceRecognizerSF_FR_COSINE)
-                scores.append(recognition_score)
-
-            # Pick top scored recognized faces and mark them by the red rectangle in the frame
-            match = faces[1][np.argmax(scores)]
-            x1, y1, w, h = match[0:4]
-            cv2.rectangle(frame, (int(x1), int(y1)), (int(x1 + w), int(y1 + h)), color=(0, 0, 255), thickness=5)
-            # Do not forget to renew the frame counter
-            frame_count = 0
-        else:
-            frame_count += 1
-
-        # Draw rectangle around each face on the input image
-        visualize(frame, faces)
+        # Visualize Tracker
+        center = (int((x + w / 2)), int((y + h / 2)))
+        cv2.circle(frame, center, bbox[3] // 2, (0, 255, 255), thickness=2)
 
         # Visualize results
-        cv2.imshow("Live", frame)
+        cv2.imshow("Show Time", frame)
 
         # The 'q' button is set as the quitting button
         if cv2.waitKey(1) & 0xFF == ord("q"):
